@@ -1,0 +1,105 @@
+# ---------------------------------------------------------------------------
+# API (Ruby / Sinatra, port 4567). Sans état : on peut la passer à plusieurs
+# replicas, l'interface affiche le nom du pod qui a répondu.
+# ---------------------------------------------------------------------------
+
+# Adresses des dépendances sorties du code et rangées dans une ConfigMap.
+# RACK_ENV=custom indique à l'API de lire ces variables (en mode `production`
+# elle utiliserait les noms `yelb-db` et `redis-server` écrits en dur).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: yelb-appserver
+  namespace: yelb
+  labels:
+    app.kubernetes.io/name: yelb-appserver
+    app.kubernetes.io/component: api
+    app.kubernetes.io/part-of: yelb
+data:
+  RACK_ENV: custom
+  YELB_DB_SERVER_ENDPOINT: yelb-db
+  REDIS_SERVER_ENDPOINT: redis-server
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: yelb-appserver
+  namespace: yelb
+  labels:
+    app.kubernetes.io/name: yelb-appserver
+    app.kubernetes.io/component: api
+    app.kubernetes.io/part-of: yelb
+    app.kubernetes.io/version: "0.7"
+spec:
+  replicas: 2
+  revisionHistoryLimit: 3
+  # Mise à jour progressive sans coupure : on ajoute un pod neuf avant d'en
+  # retirer un ancien.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: yelb-appserver
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: yelb-appserver
+        app.kubernetes.io/component: api
+        app.kubernetes.io/part-of: yelb
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: appserver
+          image: mreferre/yelb-appserver:0.7
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 4567
+          envFrom:
+            - configMapRef:
+                name: yelb-appserver
+          securityContext:
+            allowPrivilegeEscalation: false
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          # /api/hostname ne dépend ni de la base ni de Redis : il dit
+          # seulement si le processus Ruby répond.
+          readinessProbe:
+            httpGet:
+              path: /api/hostname
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /api/hostname
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+---
+# Le nom `yelb-appserver` est celui qu'attend l'interface (variable
+# YELB_APPSERVER_ENDPOINT du front).
+apiVersion: v1
+kind: Service
+metadata:
+  name: yelb-appserver
+  namespace: yelb
+  labels:
+    app.kubernetes.io/name: yelb-appserver
+    app.kubernetes.io/component: api
+    app.kubernetes.io/part-of: yelb
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: yelb-appserver
+  ports:
+    - name: http
+      port: 4567
+      targetPort: http

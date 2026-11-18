@@ -1,0 +1,134 @@
+# ---------------------------------------------------------------------------
+# Base de données PostgreSQL (image yelb-db : postgres 10 + script d'init qui
+# crée la base `yelbdatabase` et la table `restaurants`).
+# ---------------------------------------------------------------------------
+
+# Le mot de passe est rangé dans un Secret plutôt qu'en clair dans le
+# Deployment. ATTENTION : l'API Yelb a ce mot de passe écrit en dur dans son
+# code ("postgres_password") ; il ne peut donc pas être changé ici.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: yelb-db
+  namespace: yelb
+  labels:
+    app.kubernetes.io/name: yelb-db
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: yelb
+type: Opaque
+stringData:
+  POSTGRES_PASSWORD: postgres_password
+---
+# Volume persistant : les votes survivent à la suppression / au redémarrage
+# du pod. Sans storageClassName, la StorageClass par défaut du cluster est
+# utilisée (local-path sur k3s/kind, sbs-default sur Kapsule…).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: yelb-db-data
+  namespace: yelb
+  labels:
+    app.kubernetes.io/name: yelb-db
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: yelb
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: yelb-db
+  namespace: yelb
+  labels:
+    app.kubernetes.io/name: yelb-db
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: yelb
+    app.kubernetes.io/version: "0.6"
+spec:
+  # Une seule instance : deux PostgreSQL sur le même volume corrompraient les
+  # données. (En production on utiliserait un StatefulSet ou un opérateur.)
+  replicas: 1
+  # Recreate : l'ancien pod est arrêté AVANT le démarrage du nouveau, sinon le
+  # volume ReadWriteOnce resterait attaché à l'ancien pod lors d'une mise à jour.
+  strategy:
+    type: Recreate
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: yelb-db
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: yelb-db
+        app.kubernetes.io/component: database
+        app.kubernetes.io/part-of: yelb
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: postgres
+          image: mreferre/yelb-db:0.6   # toujours un tag précis, jamais :latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: yelb-db
+                  key: POSTGRES_PASSWORD
+            # Sous-dossier du volume : la racine d'un volume ext4 contient
+            # `lost+found`, que PostgreSQL refuse au moment de l'initdb.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+          # Prêt à recevoir du trafic quand PostgreSQL accepte les connexions.
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres", "-d", "yelbdatabase"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          # Redémarré s'il ne répond plus (délai large : le premier démarrage
+          # exécute le script d'initialisation).
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 6
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: yelb-db-data
+---
+# Service ClusterIP : la base n'est joignable QUE depuis le cluster.
+# Le nom `yelb-db` est imposé : l'API cherche exactement ce nom DNS.
+apiVersion: v1
+kind: Service
+metadata:
+  name: yelb-db
+  namespace: yelb
+  labels:
+    app.kubernetes.io/name: yelb-db
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: yelb
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: yelb-db
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres

@@ -1,0 +1,8 @@
+# Namespace dédié : isole les ressources du TP et permet de tout supprimer
+# d'un coup avec `kubectl delete namespace yelb`.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: yelb
+  labels:
+    app.kubernetes.io/part-of: yelb

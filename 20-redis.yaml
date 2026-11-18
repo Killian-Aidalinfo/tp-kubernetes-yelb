@@ -1,0 +1,86 @@
+# ---------------------------------------------------------------------------
+# Cache Redis : compte les pages vues. Données jetables, donc pas de volume.
+# ---------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-server
+  namespace: yelb
+  labels:
+    app.kubernetes.io/name: redis-server
+    app.kubernetes.io/component: cache
+    app.kubernetes.io/part-of: yelb
+    app.kubernetes.io/version: "7.4"
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: redis-server
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: redis-server
+        app.kubernetes.io/component: cache
+        app.kubernetes.io/part-of: yelb
+    spec:
+      automountServiceAccountToken: false
+      # L'image officielle sait tourner sans root (utilisateur redis, uid 999).
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: redis
+          image: redis:7.4-alpine
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: redis
+              containerPort: 6379
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: data      # redis écrit dans /data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: redis
+            initialDelaySeconds: 10
+            periodSeconds: 10
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+# Le nom `redis-server` est imposé : l'API cherche exactement ce nom DNS.
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-server
+  namespace: yelb
+  labels:
+    app.kubernetes.io/name: redis-server
+    app.kubernetes.io/component: cache
+    app.kubernetes.io/part-of: yelb
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: redis-server
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis
