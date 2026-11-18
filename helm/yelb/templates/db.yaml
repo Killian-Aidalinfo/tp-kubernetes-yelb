@@ -1,0 +1,112 @@
+{{- /* Base PostgreSQL : Secret, PVC, Deployment et Service. */ -}}
+{{- $ctx := dict "root" . "component" "db" "version" .Values.db.image.tag -}}
+{{- $name := include "yelb.componentName" $ctx -}}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "yelb.labels" $ctx | nindent 4 }}
+type: Opaque
+stringData:
+  POSTGRES_PASSWORD: {{ .Values.db.password | quote }}
+{{- if .Values.db.persistence.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $name }}-data
+  labels:
+    {{- include "yelb.labels" $ctx | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- with .Values.db.persistence.storageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.db.persistence.size }}
+{{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "yelb.labels" $ctx | nindent 4 }}
+spec:
+  # Une seule instance : deux PostgreSQL sur le même volume le corrompraient.
+  replicas: 1
+  # Recreate : un volume ReadWriteOnce ne peut pas être monté par deux pods
+  # pendant une mise à jour.
+  strategy:
+    type: Recreate
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      {{- include "yelb.selectorLabels" $ctx | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "yelb.labels" $ctx | nindent 8 }}
+      annotations:
+        # Le pod est recréé si le mot de passe change.
+        checksum/secret: {{ .Values.db.password | sha256sum }}
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: postgres
+          image: {{ include "yelb.image" .Values.db.image }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $name }}
+                  key: POSTGRES_PASSWORD
+            # Sous-dossier : la racine d'un volume ext4 contient lost+found.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          resources:
+            {{- toYaml .Values.db.resources | nindent 12 }}
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres", "-d", "yelbdatabase"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 6
+      volumes:
+        - name: data
+          {{- if .Values.db.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ $name }}-data
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "yelb.labels" $ctx | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "yelb.selectorLabels" $ctx | nindent 4 }}
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres

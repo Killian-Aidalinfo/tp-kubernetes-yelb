@@ -1,0 +1,20 @@
+# ---------------------------------------------------------------------------
+# Environnement PROD : plusieurs replicas, données persistées, vrai certificat.
+#   helm install prod ./helm/yelb -n yelb-prod --create-namespace -f helm/yelb/values-prod.yaml
+# ---------------------------------------------------------------------------
+ui:
+  replicaCount: 2
+
+appserver:
+  replicaCount: 3
+
+db:
+  persistence:
+    enabled: true
+    size: 2Gi
+
+ingress:
+  host: demo.killian-stein-3.lab-cesi.fr
+  tls:
+    enabled: true
+    clusterIssuer: letsencrypt-prod

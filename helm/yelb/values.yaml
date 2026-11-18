@@ -1,0 +1,92 @@
+# ---------------------------------------------------------------------------
+# Valeurs par défaut du chart Yelb.
+# Les fichiers values-dev.yaml et values-prod.yaml n'écrasent que ce qui
+# change entre les deux environnements.
+# ---------------------------------------------------------------------------
+
+# Préfixe des noms de ressources. Par défaut : <release>-yelb, ou <release>
+# si le nom de la release contient déjà « yelb ».
+nameOverride: ""
+fullnameOverride: ""
+
+# Politique de téléchargement commune à toutes les images.
+imagePullPolicy: IfNotPresent
+
+# --- Interface web (Angular + nginx) ----------------------------------------
+ui:
+  image:
+    repository: mreferre/yelb-ui
+    tag: "0.10"            # toujours un tag précis : il n'existe pas de latest
+  replicaCount: 2
+  resources:
+    requests:
+      cpu: 50m
+      memory: 32Mi
+    limits:
+      memory: 128Mi
+
+# --- API (Ruby / Sinatra, port 4567) ----------------------------------------
+appserver:
+  image:
+    repository: mreferre/yelb-appserver
+    tag: "0.7"
+  replicaCount: 2
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 256Mi
+
+# --- Base PostgreSQL --------------------------------------------------------
+db:
+  image:
+    repository: mreferre/yelb-db
+    tag: "0.6"
+  # ATTENTION : l'API a ce mot de passe écrit en dur dans son code. Le changer
+  # ici casse la connexion entre l'API et la base.
+  password: postgres_password
+  persistence:
+    # false = emptyDir : les données sont perdues quand le pod est recréé.
+    enabled: true
+    size: 1Gi
+    # Vide = StorageClass par défaut du cluster.
+    storageClass: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      memory: 256Mi
+
+# --- Cache Redis (pages vues, données jetables) -----------------------------
+redis:
+  image:
+    repository: redis
+    tag: "7.4-alpine"
+  resources:
+    requests:
+      cpu: 50m
+      memory: 32Mi
+    limits:
+      memory: 128Mi
+
+# --- Exposition -------------------------------------------------------------
+ingress:
+  enabled: true
+  className: traefik
+  host: demo.killian-stein-3.lab-cesi.fr
+  tls:
+    # true : HTTPS avec un certificat demandé à cert-manager.
+    # false : HTTP seulement (entrée `web` de Traefik).
+    enabled: true
+    # letsencrypt-staging pour tester, letsencrypt-prod pour le vrai cadenas.
+    clusterIssuer: letsencrypt-staging
+  # Redirige http:// vers https:// (Middleware Traefik). Ignoré sans TLS.
+  httpsRedirect: true
+
+# --- helm test --------------------------------------------------------------
+tests:
+  image:
+    repository: busybox
+    tag: "1.37"

@@ -31,6 +31,7 @@ navigateur ──HTTPS──► Traefik (Ingress) ──► yelb-ui ──/api�
 12. [Bonnes pratiques appliquées](#12-bonnes-pratiques-appliquées)
 13. [Limites connues de l'appli](#13-limites-connues-de-lappli)
 14. [Idées d'exercices](#14-idées-dexercices)
+15. [TP 3 : packager l'appli avec Helm](#15-tp-3--packager-lappli-avec-helm)
 
 ---
 
@@ -46,6 +47,7 @@ navigateur ──HTTPS──► Traefik (Ingress) ──► yelb-ui ──/api�
 | `50-ingress.yaml` | Ingress HTTPS : entrée `websecure`, bloc `tls`, annotation cert-manager |
 | `51-ingress-http-redirect.yaml` | Middleware Traefik et Ingress HTTP qui redirigent vers HTTPS |
 | `kustomization.yaml` | Liste des fichiers de l'appli, pour `kubectl apply -k .` |
+| `helm/` | TP 3 : chart Helm de l'appli et son guide ([helm/README.md](helm/README.md)) |
 | `cert-manager/cluster-issuers.yaml` | ClusterIssuers `letsencrypt-staging` et `letsencrypt-prod`. Hors kustomization, car ils concernent tout le cluster |
 
 ---
@@ -535,3 +537,15 @@ kubectl delete -f https://github.com/cert-manager/cert-manager/releases/download
    kubectl -n yelb get certificate,order,challenge -w
    ```
 6. **Pour aller plus loin :** remplacer le Deployment PostgreSQL par un StatefulSet.
+
+---
+
+## 15. TP 3 : packager l'appli avec Helm
+
+Les manifestes ci-dessus sont repris dans un chart Helm, `helm/yelb`, qui installe une release **dev** et une release **prod** à partir du même code. Le guide complet se trouve dans [helm/README.md](helm/README.md) : création du chart, paramètres, install, upgrade, rollback et `helm test`.
+
+```bash
+helm install dev  ./helm/yelb -n yelb-dev  --create-namespace -f helm/yelb/values-dev.yaml  --wait
+helm install prod ./helm/yelb -n yelb-prod --create-namespace -f helm/yelb/values-prod.yaml --wait
+helm test prod -n yelb-prod --logs
+```

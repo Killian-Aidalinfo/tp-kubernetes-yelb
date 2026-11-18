@@ -1,0 +1,55 @@
+{{- /*
+Test lancé par `helm test <release>` : un pod jetable vérifie
+  1. que l'API répond (/api/hostname : ce que la slide appelle /healthz,
+     Yelb n'ayant pas d'endpoint /healthz) ;
+  2. que toute la chaîne fonctionne : front -> API -> PostgreSQL
+     (/api/getvotes appelé à travers le nginx du front).
+Le pod sort en code 0 si tout répond, sinon le test échoue.
+*/ -}}
+{{- $ctx := dict "root" . "component" "test" -}}
+{{- $api := include "yelb.componentName" (dict "root" . "component" "appserver") -}}
+{{- $ui := include "yelb.componentName" (dict "root" . "component" "ui") -}}
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "yelb.fullname" . }}-test
+  labels:
+    {{- include "yelb.labels" $ctx | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+    # Supprime l'ancien pod de test avant d'en relancer un. On garde le pod
+    # après le test pour pouvoir lire ses logs : `kubectl logs <release>-yelb-test`.
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: test
+      image: {{ include "yelb.image" .Values.tests.image }}
+      imagePullPolicy: {{ .Values.imagePullPolicy }}
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: ["ALL"]
+      command:
+        - sh
+        - -ec
+        - |
+          echo "1/2 Santé de l'API : http://{{ $api }}:4567/api/hostname"
+          wget -qO- -T 5 http://{{ $api }}:4567/api/hostname
+          echo
+          echo "2/2 Chaîne complète front -> API -> base : http://{{ $ui }}/api/getvotes"
+          wget -qO- -T 5 http://{{ $ui }}/api/getvotes | grep -q outback
+          echo "OK"
+      resources:
+        requests:
+          cpu: 10m
+          memory: 16Mi
+        limits:
+          memory: 32Mi

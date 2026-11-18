@@ -1,0 +1,22 @@
+apiVersion: v2
+name: yelb
+description: >-
+  Appli de vote Yelb (front Angular, API Ruby, PostgreSQL, Redis) packagée
+  pour le TP Kubernetes : Deployments, Services, PVC, Ingress Traefik et
+  certificat cert-manager.
+type: application
+
+# Version du chart : à incrémenter à chaque modification des templates.
+version: 0.1.0
+
+# Version de l'appli livrée (celle du front). Les tags de chaque image sont
+# réglés séparément dans values.yaml.
+appVersion: "0.10"
+
+keywords:
+  - yelb
+  - tp
+  - kubernetes
+sources:
+  - https://github.com/Killian-Aidalinfo/tp-kubernetes-yelb
+  - https://github.com/mreferre/yelb
