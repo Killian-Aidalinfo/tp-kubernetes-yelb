@@ -1,7 +1,13 @@
 # ---------------------------------------------------------------------------
-# Ingress : point d'entrée unique de l'appli, géré par Traefik.
-# Traefik route selon le nom d'hôte demandé vers le Service yelb-ui.
-# HTTP seulement pour l'instant (pas encore de cert-manager / TLS).
+# Ingress HTTPS : point d'entrée de l'appli, géré par Traefik.
+#
+# L'annotation cert-manager.io/cluster-issuer suffit : cert-manager voit
+# l'Ingress, crée un objet Certificate pour les hôtes du bloc `tls`, obtient
+# le certificat auprès de Let's Encrypt et le range dans le Secret `yelb-tls`,
+# que Traefik utilise ensuite.
+#
+# Étape 1 : letsencrypt-staging (certificat de test, alerte du navigateur).
+# Étape 2 : passer à letsencrypt-prod -> vrai cadenas.
 # ---------------------------------------------------------------------------
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -13,11 +19,15 @@ metadata:
     app.kubernetes.io/component: frontend
     app.kubernetes.io/part-of: yelb
   annotations:
-    # N'écouter que sur l'entrée HTTP (port 80) de Traefik. À remplacer par
-    # `websecure` le jour où un certificat sera ajouté.
-    traefik.ingress.kubernetes.io/router.entrypoints: web
+    cert-manager.io/cluster-issuer: letsencrypt-staging
+    # Entrée HTTPS (port 443) de Traefik uniquement.
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
 spec:
   ingressClassName: traefik
+  tls:
+    - hosts:
+        - demo.killian-stein-3.lab-cesi.fr
+      secretName: yelb-tls   # créé et renouvelé par cert-manager
   rules:
     - host: demo.killian-stein-3.lab-cesi.fr
       http:

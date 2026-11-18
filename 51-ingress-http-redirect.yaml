@@ -1,0 +1,51 @@
+# ---------------------------------------------------------------------------
+# Redirection HTTP -> HTTPS.
+#
+# Un second Ingress écoute sur l'entrée HTTP (port 80) et renvoie une
+# redirection permanente vers https://. Il est séparé de l'Ingress HTTPS car,
+# chez Traefik, un routeur avec TLS ne répond pas en HTTP clair.
+#
+# Le défi Let's Encrypt (/.well-known/acme-challenge/...) n'est pas redirigé :
+# l'Ingress temporaire créé par cert-manager a une règle plus longue, et
+# Traefik donne la priorité à la règle la plus longue.
+#
+# Nécessite les CRD Traefik (installées par défaut sur k3s et par le chart Helm).
+# ---------------------------------------------------------------------------
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: redirect-https
+  namespace: yelb
+  labels:
+    app.kubernetes.io/part-of: yelb
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: yelb-http-redirect
+  namespace: yelb
+  labels:
+    app.kubernetes.io/name: yelb-ui
+    app.kubernetes.io/component: frontend
+    app.kubernetes.io/part-of: yelb
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+    # Format : <namespace>-<nom du Middleware>@kubernetescrd
+    traefik.ingress.kubernetes.io/router.middlewares: yelb-redirect-https@kubernetescrd
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: demo.killian-stein-3.lab-cesi.fr
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: yelb-ui
+                port:
+                  name: http

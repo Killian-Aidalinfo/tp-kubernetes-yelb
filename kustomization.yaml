@@ -8,3 +8,4 @@ resources:
   - 30-appserver.yaml
   - 40-ui.yaml
   - 50-ingress.yaml
+  - 51-ingress-http-redirect.yaml
