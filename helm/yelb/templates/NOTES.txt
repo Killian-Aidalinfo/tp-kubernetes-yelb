@@ -1,0 +1,23 @@
+Yelb est installé : release « {{ .Release.Name }} », namespace « {{ .Release.Namespace }} », révision {{ .Release.Revision }}.
+
+{{- if .Values.ingress.enabled }}
+{{- if .Values.ingress.tls.enabled }}
+
+Adresse : https://{{ .Values.ingress.host }}
+Certificat demandé à « {{ .Values.ingress.tls.clusterIssuer }} » :
+  kubectl -n {{ .Release.Namespace }} get certificate {{ include "yelb.fullname" . }}-tls -w
+{{- else }}
+
+Adresse : http://{{ .Values.ingress.host }}
+{{- end }}
+{{- else }}
+
+Pas d'Ingress. Accès local :
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "yelb.componentName" (dict "root" . "component" "ui") }} 8080:80
+{{- end }}
+
+Suivre le démarrage :
+  kubectl -n {{ .Release.Namespace }} get pods -l app.kubernetes.io/instance={{ .Release.Name }} -w
+
+Tester l'installation :
+  helm test {{ .Release.Name }} -n {{ .Release.Namespace }} --logs

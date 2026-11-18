@@ -1,0 +1,83 @@
+{{- /*
+Exposition par Traefik.
+- TLS activé : Ingress HTTPS (entrée websecure + certificat cert-manager) et,
+  si httpsRedirect, un second Ingress HTTP qui redirige vers HTTPS.
+- TLS désactivé : un seul Ingress en HTTP (entrée web).
+*/ -}}
+{{- if .Values.ingress.enabled }}
+{{- $ctx := dict "root" . "component" "ui" "version" .Values.ui.image.tag -}}
+{{- $fullname := include "yelb.fullname" . -}}
+{{- $uiService := include "yelb.componentName" $ctx -}}
+{{- $tls := .Values.ingress.tls.enabled -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $fullname }}
+  labels:
+    {{- include "yelb.labels" $ctx | nindent 4 }}
+  annotations:
+    {{- if $tls }}
+    cert-manager.io/cluster-issuer: {{ .Values.ingress.tls.clusterIssuer | quote }}
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    {{- else }}
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+    {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- if $tls }}
+  tls:
+    - hosts:
+        - {{ .Values.ingress.host | quote }}
+      secretName: {{ $fullname }}-tls
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $uiService }}
+                port:
+                  name: http
+{{- if and $tls .Values.ingress.httpsRedirect }}
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ $fullname }}-redirect-https
+  labels:
+    {{- include "yelb.labels" $ctx | nindent 4 }}
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+---
+# Le défi Let's Encrypt n'est pas redirigé : l'Ingress temporaire de
+# cert-manager a une règle plus longue, donc prioritaire chez Traefik.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $fullname }}-http-redirect
+  labels:
+    {{- include "yelb.labels" $ctx | nindent 4 }}
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+    # Format : <namespace>-<nom du Middleware>@kubernetescrd
+    traefik.ingress.kubernetes.io/router.middlewares: {{ printf "%s-%s-redirect-https@kubernetescrd" .Release.Namespace $fullname }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  rules:
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $uiService }}
+                port:
+                  name: http
+{{- end }}
+{{- end }}

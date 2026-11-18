@@ -1,0 +1,20 @@
+# ---------------------------------------------------------------------------
+# Environnement DEV : léger, jetable, certificat de staging.
+#   helm install dev ./helm/yelb -n yelb-dev --create-namespace -f helm/yelb/values-dev.yaml
+# ---------------------------------------------------------------------------
+ui:
+  replicaCount: 1
+
+appserver:
+  replicaCount: 1
+
+db:
+  persistence:
+    enabled: false        # pas de volume en dev : la base repart de zéro
+
+ingress:
+  # Nom DNS distinct de la prod : il faut un enregistrement DNS pour lui aussi.
+  host: dev.killian-stein-3.lab-cesi.fr
+  tls:
+    enabled: true
+    clusterIssuer: letsencrypt-staging
