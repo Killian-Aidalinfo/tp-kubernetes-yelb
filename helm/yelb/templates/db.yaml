@@ -16,6 +16,29 @@ type: Opaque
 stringData:
   POSTGRES_PASSWORD: {{ .Values.db.password | quote }}
 {{- end }}
+---
+# Script d'initialisation de la base, exécuté par l'image au premier
+# démarrage (volume vide). Fourni par le chart pour pouvoir utiliser l'image
+# officielle postgres, qui ne le contient pas (TP 5, bonus Trivy).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}-init
+  labels:
+    {{- include "yelb.labels" $ctx | nindent 4 }}
+data:
+  init-yelb-db.sql: |
+    CREATE DATABASE yelbdatabase;
+    \connect yelbdatabase;
+    CREATE TABLE restaurants (
+      name  char(30),
+      count integer,
+      PRIMARY KEY (name)
+    );
+    INSERT INTO restaurants (name, count) VALUES ('outback', 0);
+    INSERT INTO restaurants (name, count) VALUES ('bucadibeppo', 0);
+    INSERT INTO restaurants (name, count) VALUES ('chipotle', 0);
+    INSERT INTO restaurants (name, count) VALUES ('ihop', 0);
 {{- if .Values.db.persistence.enabled }}
 ---
 apiVersion: v1
@@ -64,10 +87,10 @@ spec:
     spec:
       automountServiceAccountToken: false
       {{- if .Values.podSecurity.restricted }}
-      # Utilisateur postgres de l'image (uid 999) ; fsGroup rend le volume
-      # accessible en écriture à ce groupe.
+      # Utilisateur postgres de l'image (db.runAsUser) ; fsGroup rend le
+      # volume accessible en écriture à ce groupe.
       securityContext:
-        {{- include "yelb.restrictedPodSecurityContext" (dict "uid" 999 "fsGroup" 999) | nindent 8 }}
+        {{- include "yelb.restrictedPodSecurityContext" (dict "uid" .Values.db.runAsUser "fsGroup" .Values.db.runAsUser) | nindent 8 }}
       {{- end }}
       containers:
         - name: postgres
@@ -92,6 +115,9 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /var/lib/postgresql/data
+            - name: init
+              mountPath: /docker-entrypoint-initdb.d
+              readOnly: true
           resources:
             {{- toYaml .Values.db.resources | nindent 12 }}
           readinessProbe:
@@ -106,6 +132,9 @@ spec:
             periodSeconds: 10
             failureThreshold: 6
       volumes:
+        - name: init
+          configMap:
+            name: {{ $name }}-init
         - name: data
           {{- if .Values.db.persistence.enabled }}
           persistentVolumeClaim:
