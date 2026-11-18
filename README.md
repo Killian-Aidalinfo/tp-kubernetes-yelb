@@ -63,6 +63,27 @@ Il faut :
 - un enregistrement **DNS** qui pointe vers l'IP publique de Traefik ;
 - les ports **80 et 443** ouverts vers Traefik. Le port 80 sert aussi à la validation Let's Encrypt.
 
+### Sur k3s : utiliser kubectl (et Helm) sans sudo
+
+Sur k3s, le fichier de connexion au cluster (`/etc/rancher/k3s/k3s.yaml`) n'est lisible que par root. `sudo kubectl` fonctionne, mais un `kubectl` sans `sudo` répond `permission denied`, et Helm échoue avec `kubernetes cluster unreachable: Get "http://localhost:8080/version"`. On copie donc ce fichier à son nom :
+
+```bash
+mkdir -p ~/.kube
+sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
+sudo chown "$(id -u):$(id -g)" ~/.kube/config
+chmod 600 ~/.kube/config
+
+# Indiquer ce fichier à kubectl et Helm, pour cette session et les suivantes
+echo 'export KUBECONFIG=$HOME/.kube/config' >> ~/.bashrc
+source ~/.bashrc
+
+# Vérifier, sans sudo
+kubectl get nodes
+helm list -A
+```
+
+L'explication détaillée est dans le [guide du TP 3](helm/README.md#sur-k3s--donner-à-helm-laccès-au-cluster).
+
 Commandes pour tout vérifier :
 
 ```bash
@@ -441,6 +462,7 @@ kubectl diff -k .
 
 | Symptôme | Commande pour enquêter | Cause probable |
 |---|---|---|
+| `permission denied` sur `/etc/rancher/k3s/k3s.yaml`, ou `localhost:8080 … connection refused` | `echo $KUBECONFIG` | kubeconfig k3s non copié : voir section 1, « Sur k3s » |
 | `ErrImagePull` / `ImagePullBackOff` | `kubectl -n yelb describe pod <pod>` | Tag d'image faux : il n'y a pas de `latest` pour Yelb. Ou limite de téléchargement Docker Hub (`toomanyrequests`) |
 | `exec format error`, `no matching manifest` | `kubectl get nodes -L kubernetes.io/arch` | Nœud ARM : les images Yelb sont amd64 seulement |
 | Pod `Pending` | `kubectl -n yelb describe pod <pod>` | Pas assez de ressources, ou PVC non lié |

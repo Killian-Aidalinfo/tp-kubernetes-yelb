@@ -5,6 +5,7 @@ Les manifestes des TP 1 et 2 (à la racine du dépôt) deviennent un chart Helm,
 ## Sommaire
 
 1. [Prérequis](#1-prérequis)
+   - [Sur k3s : donner à Helm l'accès au cluster](#sur-k3s--donner-à-helm-laccès-au-cluster)
 2. [Créer le chart](#2-créer-le-chart)
 3. [Structure du chart](#3-structure-du-chart)
 4. [Paramètres (values.yaml)](#4-paramètres-valuesyaml)
@@ -34,11 +35,73 @@ Les manifestes des TP 1 et 2 (à la racine du dépôt) deviennent un chart Helm,
   - dev : `dev.killian-stein-3.lab-cesi.fr`
   - prod : `demo.killian-stein-3.lab-cesi.fr`
 
+- **Helm doit pouvoir joindre le cluster.** Sur k3s, ce n'est pas le cas par défaut : voir juste en dessous.
+
 - **Supprimer le déploiement du TP 2** s'il tourne encore : deux Ingress avec le même nom d'hôte entreraient en conflit chez Traefik.
 
   ```bash
   kubectl delete namespace yelb --ignore-not-found
   ```
+
+### Sur k3s : donner à Helm l'accès au cluster
+
+**Symptôme :** `sudo kubectl` fonctionne, mais Helm ne trouve pas le cluster.
+
+```
+$ sudo kubectl get ns
+NAME              STATUS   AGE
+cert-manager      Active   109m
+...
+$ helm list --all-namespaces
+Error: kubernetes cluster unreachable: Get "http://localhost:8080/version": dial tcp 127.0.0.1:8080: connect: connection refused
+```
+
+**Pourquoi :**
+
+- k3s écrit le fichier de connexion au cluster, le *kubeconfig*, dans `/etc/rancher/k3s/k3s.yaml`. Ce fichier contient l'accès administrateur au cluster, il n'est donc lisible que par root.
+- Sur k3s, `kubectl` est un lien vers le binaire `k3s`, qui lit ce fichier par défaut. Il marche donc avec `sudo`.
+- Helm, comme le `kubectl` standard, ne connaît pas ce chemin. Il cherche la variable `KUBECONFIG`, puis `~/.kube/config`. Il ne trouve rien et se rabat sur sa valeur par défaut, `http://localhost:8080`, où rien n'écoute : d'où le `connection refused`.
+- `sudo helm` ne règle rien : root n'a pas de `~/.kube/config` non plus.
+
+**Solution (recommandée) :** copier le kubeconfig dans son dossier personnel, à son nom, et le désigner avec `KUBECONFIG`.
+
+```bash
+mkdir -p ~/.kube
+sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
+sudo chown "$(id -u):$(id -g)" ~/.kube/config
+chmod 600 ~/.kube/config
+
+# Indiquer ce fichier à kubectl et Helm, pour cette session et les suivantes
+echo 'export KUBECONFIG=$HOME/.kube/config' >> ~/.bashrc
+source ~/.bashrc
+
+# Vérifier, sans sudo
+kubectl get nodes
+helm list -A
+```
+
+`kubectl` marche alors aussi sans `sudo`. L'`export KUBECONFIG` est nécessaire : sans lui, le `kubectl` de k3s essaie toujours de lire `/etc/rancher/k3s/k3s.yaml` et répond `permission denied`.
+
+> Ce fichier donne un accès administrateur complet au cluster : gardez-le en `chmod 600` et ne le partagez pas. Si k3s est réinstallé, ses certificats changent : il faut refaire la copie.
+
+**Autres possibilités :**
+
+```bash
+# Ponctuellement, sans copie (en root : le cache de Helm sera créé dans /root)
+sudo helm list -A --kubeconfig /etc/rancher/k3s/k3s.yaml
+
+# À l'installation de k3s, rendre le fichier lisible par tous : déconseillé,
+# car tout utilisateur de la machine devient administrateur du cluster
+curl -sfL https://get.k3s.io | sh -s - --write-kubeconfig-mode 644
+```
+
+**Vérifier quel cluster Helm et kubectl utilisent :**
+
+```bash
+echo $KUBECONFIG
+kubectl config current-context        # « default » sur k3s
+kubectl config view --minify          # serveur : https://127.0.0.1:6443
+```
 
 ---
 
@@ -328,6 +391,8 @@ kubectl -n yelb-dev logs dev-yelb-test
 
 | Symptôme | Commande | Cause probable |
 |---|---|---|
+| `kubernetes cluster unreachable: Get "http://localhost:8080/version"` | `echo $KUBECONFIG` et `ls -l ~/.kube/config` | Helm ne trouve pas de kubeconfig (cas de k3s) : voir [Sur k3s : donner à Helm l'accès au cluster](#sur-k3s--donner-à-helm-laccès-au-cluster) |
+| `error loading config file … permission denied` | `ls -l ~/.kube/config /etc/rancher/k3s/k3s.yaml` | Le fichier appartient à root : refaire le `chown` |
 | `INSTALLATION FAILED: cannot re-use a name that is still in use` | `helm list -A` | Release déjà installée : utiliser `helm upgrade --install` |
 | `UPGRADE FAILED: another operation is in progress` | `helm history <release> -n <ns>` | Opération précédente interrompue : `helm rollback` vers la dernière révision `deployed` |
 | `no matches for kind "Middleware"` | `kubectl get crd middlewares.traefik.io` | CRD Traefik absentes : `--set ingress.httpsRedirect=false` |
