@@ -1,0 +1,50 @@
+# ---------------------------------------------------------------------------
+# Émetteurs Let's Encrypt pour cert-manager, valables pour tout le cluster
+# (ClusterIssuer = pas de namespace).
+#
+# À appliquer UNE fois, après l'installation de cert-manager :
+#   kubectl apply -f cert-manager/cluster-issuers.yaml
+#
+# Validation HTTP-01 : Let's Encrypt appelle
+#   http://<hôte>/.well-known/acme-challenge/<jeton>
+# cert-manager crée lui-même un Ingress temporaire (classe traefik) qui répond
+# à cet appel. Le DNS doit donc déjà pointer vers Traefik, port 80 ouvert.
+# ---------------------------------------------------------------------------
+
+# 1) STAGING : à utiliser en premier. Limites de quota très larges, mais le
+#    certificat est signé par une fausse autorité : le navigateur affiche une
+#    alerte. Sert à valider que toute la chaîne fonctionne.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging
+spec:
+  acme:
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    # Adresse de contact facultative chez Let's Encrypt :
+    # email: prenom.nom@exemple.fr
+    # Secret où cert-manager range la clé privée du compte ACME.
+    privateKeySecretRef:
+      name: letsencrypt-staging-account-key
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: traefik
+---
+# 2) PRODUCTION : vrai certificat reconnu par les navigateurs (le cadenas).
+#    Quotas stricts (ex. 5 certificats identiques par semaine) : n'y passer
+#    qu'une fois le staging validé.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    # email: prenom.nom@exemple.fr
+    privateKeySecretRef:
+      name: letsencrypt-prod-account-key
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: traefik
