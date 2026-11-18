@@ -75,8 +75,8 @@ spec:
             initialDelaySeconds: 10
             periodSeconds: 10
 ---
-# Seul composant exposé hors du cluster : NodePort, joignable sur
-# http://<IP d'un nœud>:30080 (plage autorisée : 30000-32767).
+# ClusterIP : le front n'est plus exposé directement, c'est l'Ingress
+# (50-ingress.yaml) qui lui envoie le trafic.
 apiVersion: v1
 kind: Service
 metadata:
@@ -87,11 +87,10 @@ metadata:
     app.kubernetes.io/component: frontend
     app.kubernetes.io/part-of: yelb
 spec:
-  type: NodePort
+  type: ClusterIP
   selector:
     app.kubernetes.io/name: yelb-ui
   ports:
     - name: http
       port: 80
       targetPort: http
-      nodePort: 30080

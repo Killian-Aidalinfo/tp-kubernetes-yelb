@@ -1,0 +1,33 @@
+# ---------------------------------------------------------------------------
+# Ingress : point d'entrée unique de l'appli, géré par Traefik.
+# Traefik route selon le nom d'hôte demandé vers le Service yelb-ui.
+# HTTP seulement pour l'instant (pas encore de cert-manager / TLS).
+# ---------------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: yelb
+  namespace: yelb
+  labels:
+    app.kubernetes.io/name: yelb-ui
+    app.kubernetes.io/component: frontend
+    app.kubernetes.io/part-of: yelb
+  annotations:
+    # N'écouter que sur l'entrée HTTP (port 80) de Traefik. À remplacer par
+    # `websecure` le jour où un certificat sera ajouté.
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: demo.killian-stein-3.lab-cesi.fr
+      http:
+        paths:
+          # Tout le site, y compris /api : c'est le nginx du front qui relaie
+          # ensuite /api vers le Service yelb-appserver.
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: yelb-ui
+                port:
+                  name: http
