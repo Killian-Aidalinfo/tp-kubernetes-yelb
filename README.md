@@ -1,5 +1,7 @@
 # TP Kubernetes : Yelb (web + API + PostgreSQL)
 
+[![Lint Kubernetes](https://github.com/Killian-Aidalinfo/tp-kubernetes-yelb/actions/workflows/k8s-lint.yml/badge.svg)](https://github.com/Killian-Aidalinfo/tp-kubernetes-yelb/actions/workflows/k8s-lint.yml)
+
 Yelb est une petite appli de vote « où manger ce midi ». Elle compte quatre composants, tous en images publiques :
 
 | Composant | Image | Port | Service | Exposition |
@@ -32,6 +34,7 @@ navigateur ──HTTPS──► Traefik (Ingress) ──► yelb-ui ──/api�
 13. [Limites connues de l'appli](#13-limites-connues-de-lappli)
 14. [Idées d'exercices](#14-idées-dexercices)
 15. [TP 3 : packager l'appli avec Helm](#15-tp-3--packager-lappli-avec-helm)
+16. [Intégration continue : lint des manifestes](#16-intégration-continue--lint-des-manifestes)
 
 ---
 
@@ -47,6 +50,7 @@ navigateur ──HTTPS──► Traefik (Ingress) ──► yelb-ui ──/api�
 | `50-ingress.yaml` | Ingress HTTPS : entrée `websecure`, bloc `tls`, annotation cert-manager |
 | `51-ingress-http-redirect.yaml` | Middleware Traefik et Ingress HTTP qui redirigent vers HTTPS |
 | `kustomization.yaml` | Liste des fichiers de l'appli, pour `kubectl apply -k .` |
+| `.github/workflows/k8s-lint.yml` | Lint des manifestes et du chart à chaque Pull Request (voir section 16) |
 | `helm/` | TP 3 : chart Helm de l'appli et son guide ([helm/README.md](helm/README.md)) |
 | `cert-manager/cluster-issuers.yaml` | ClusterIssuers `letsencrypt-staging` et `letsencrypt-prod`. Hors kustomization, car ils concernent tout le cluster |
 
@@ -570,4 +574,41 @@ Les manifestes ci-dessus sont repris dans un chart Helm, `helm/yelb`, qui instal
 helm install dev  ./helm/yelb -n yelb-dev  --create-namespace -f helm/yelb/values-dev.yaml  --wait
 helm install prod ./helm/yelb -n yelb-prod --create-namespace -f helm/yelb/values-prod.yaml --wait
 helm test prod -n yelb-prod --logs
+```
+
+---
+
+## 16. Intégration continue : lint des manifestes
+
+À chaque Pull Request vers `main`, le workflow [`.github/workflows/k8s-lint.yml`](.github/workflows/k8s-lint.yml) vérifie les manifestes avec l'action [Azure/k8s-lint](https://github.com/Azure/k8s-lint). Une PR dont les manifestes sont invalides affiche une croix rouge.
+
+| Job | Ce qu'il vérifie |
+|---|---|
+| **Manifestes (TP 1-2)** | Les fichiers YAML de la racine et `cert-manager/cluster-issuers.yaml` : schémas Kubernetes (Azure/k8s-lint), validation stricte avec les CRD, `kubectl kustomize` |
+| **Chart Helm (TP 3)** | `helm lint`, puis le YAML produit par `helm template` pour dev, prod et une variante sans TLS, validé de la même façon. Le YAML rendu est téléchargeable dans les artefacts du run |
+
+**Pourquoi deux validations par job :** Azure/k8s-lint transmet `kubeconformOpts` à kubeconform comme **un seul argument**, on ne peut donc lui donner qu'une option. On lui passe `-ignore-missing-schemas`, car sans schéma les types CRD (`ClusterIssuer`, `Middleware`) feraient échouer le lint. L'étape suivante appelle kubeconform directement, en mode `-strict` (champ inconnu = erreur), avec le [catalogue de schémas CRD de datree](https://github.com/datreeio/CRDs-catalog) : rien n'est ignoré.
+
+Lancer les mêmes vérifications en local avant de pousser :
+
+```bash
+CRD='https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
+
+# Manifestes
+docker run --rm -v "$PWD:/w" -w /w ghcr.io/yannh/kubeconform:v0.8.0 \
+  -strict -summary -schema-location default -schema-location "$CRD" \
+  [0-5]*.yaml cert-manager/cluster-issuers.yaml
+
+# Chart Helm
+helm lint ./helm/yelb -f helm/yelb/values-prod.yaml
+helm template prod ./helm/yelb -n yelb-prod -f helm/yelb/values-prod.yaml > /tmp/prod.yaml
+docker run --rm -v /tmp:/w -w /w ghcr.io/yannh/kubeconform:v0.8.0 \
+  -strict -summary -schema-location default -schema-location "$CRD" prod.yaml
+```
+
+Pour suivre les runs :
+
+```bash
+gh run list --workflow k8s-lint.yml
+gh run view --log-failed
 ```

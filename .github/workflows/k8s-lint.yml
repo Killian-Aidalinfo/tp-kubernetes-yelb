@@ -1,0 +1,114 @@
+# ---------------------------------------------------------------------------
+# Lint des manifestes Kubernetes à chaque Pull Request vers main.
+#
+# 1. Manifestes bruts (TP 1-2) : Azure/k8s-lint (kubeconform), puis une
+#    validation stricte qui connaît aussi les CRD (ClusterIssuer, Middleware).
+# 2. Chart Helm (TP 3) : helm lint, rendu des valeurs dev et prod avec
+#    helm template, puis les mêmes validations sur le YAML produit.
+#
+# Pourquoi deux validations ? Azure/k8s-lint passe `kubeconformOpts` à
+# kubeconform comme UN SEUL argument : on ne peut lui donner qu'une option.
+# On lui donne -ignore-missing-schemas (sinon les types CRD font échouer le
+# lint, faute de schéma). L'étape suivante appelle kubeconform directement,
+# en mode -strict, avec le catalogue de schémas CRD de datree.
+# ---------------------------------------------------------------------------
+name: Lint Kubernetes
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Une nouvelle poussée sur la même PR annule le lint en cours.
+concurrency:
+  group: k8s-lint-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  KUBECONFORM_IMAGE: ghcr.io/yannh/kubeconform:v0.8.0
+  CRD_SCHEMAS: https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json
+
+jobs:
+  manifests:
+    name: Manifestes (TP 1-2)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Lint avec Azure/k8s-lint
+        uses: azure/k8s-lint@v4.1.0
+        with:
+          lintType: kubeconform
+          kubeconformOpts: -ignore-missing-schemas
+          manifests: |
+            00-namespace.yaml
+            10-db.yaml
+            20-redis.yaml
+            30-appserver.yaml
+            40-ui.yaml
+            50-ingress.yaml
+            51-ingress-http-redirect.yaml
+            cert-manager/cluster-issuers.yaml
+
+      - name: Validation stricte, CRD comprises
+        run: |
+          docker run --rm -v "$PWD:/w" -w /w "$KUBECONFORM_IMAGE" \
+            -strict -summary -output text \
+            -schema-location default -schema-location "$CRD_SCHEMAS" \
+            00-namespace.yaml 10-db.yaml 20-redis.yaml 30-appserver.yaml \
+            40-ui.yaml 50-ingress.yaml 51-ingress-http-redirect.yaml \
+            cert-manager/cluster-issuers.yaml
+
+      - name: Kustomization assemblable
+        run: kubectl kustomize . > /dev/null
+
+  helm:
+    name: Chart Helm (TP 3)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: azure/setup-helm@v5.0.1
+        with:
+          version: v4.3.1
+
+      - name: helm lint
+        run: |
+          helm lint ./helm/yelb -f helm/yelb/values-dev.yaml
+          helm lint ./helm/yelb -f helm/yelb/values-prod.yaml
+          helm lint ./helm/yelb --set ingress.tls.enabled=false
+
+      - name: Rendu du chart (dev et prod)
+        run: |
+          mkdir -p rendered
+          helm template dev  ./helm/yelb -n yelb-dev  -f helm/yelb/values-dev.yaml  > rendered/dev.yaml
+          helm template prod ./helm/yelb -n yelb-prod -f helm/yelb/values-prod.yaml > rendered/prod.yaml
+          helm template http ./helm/yelb -n yelb-http --set ingress.tls.enabled=false > rendered/http.yaml
+
+      - name: Lint avec Azure/k8s-lint
+        uses: azure/k8s-lint@v4.1.0
+        with:
+          lintType: kubeconform
+          kubeconformOpts: -ignore-missing-schemas
+          manifests: |
+            rendered/dev.yaml
+            rendered/prod.yaml
+            rendered/http.yaml
+
+      - name: Validation stricte, CRD comprises
+        run: |
+          docker run --rm -v "$PWD:/w" -w /w "$KUBECONFORM_IMAGE" \
+            -strict -summary -output text \
+            -schema-location default -schema-location "$CRD_SCHEMAS" \
+            rendered/
+
+      - name: Garder le YAML rendu
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: helm-rendered
+          path: rendered/
+          retention-days: 7
