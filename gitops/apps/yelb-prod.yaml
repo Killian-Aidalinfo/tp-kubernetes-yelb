@@ -10,16 +10,17 @@
 #   kubectl apply -f gitops/apps/yelb-prod.yaml
 # Ensuite, tout changement se fait par un commit poussé sur Git.
 #
-# Dans VOTRE dépôt : remplacer les trois repoURL par l'URL de votre dépôt.
+# Dans VOTRE dépôt : remplacer les deux repoURL par l'URL de votre dépôt.
 # ---------------------------------------------------------------------------
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: yelb-prod
   namespace: argocd
-  # Supprimer l'Application supprime aussi ce qu'elle a déployé.
+  # Supprimer l'Application supprime aussi ce qu'elle a déployé
+  # (suppression en cascade, au premier plan).
   finalizers:
-    - resources-finalizer.argocd.argoproj.io
+    - resources-finalizer.argocd.argoproj.io/foreground
 spec:
   project: default
 

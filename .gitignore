@@ -1,0 +1,4 @@
+# Ne jamais commiter la clé privée du contrôleur Sealed Secrets
+sealed-secrets-key*.yaml
+# ni un Secret en clair
+*.plain.yaml

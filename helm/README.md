@@ -210,6 +210,7 @@ helm template dev ./helm/yelb -n yelb-dev -f helm/yelb/values-dev.yaml
 | `appserver.replicaCount` | `2` | `1` | `3` | Replicas de l'API |
 | `db.image.repository` / `db.image.tag` | `mreferre/yelb-db` / `0.6` | | | Image de la base |
 | `db.password` | `postgres_password` | | | Mot de passe (imposé par l'API, ne pas changer) |
+| `db.existingSecret` | `""` | | | Secret existant (clé `POSTGRES_PASSWORD`) à utiliser à la place de celui du chart. Utilisé par Argo CD au TP 4 |
 | `db.persistence.enabled` | `true` | `false` | `true` | PVC, ou `emptyDir` si `false` |
 | `db.persistence.size` | `1Gi` | | `2Gi` | Taille du volume |
 | `db.persistence.storageClass` | `""` | | | StorageClass (vide = celle par défaut) |

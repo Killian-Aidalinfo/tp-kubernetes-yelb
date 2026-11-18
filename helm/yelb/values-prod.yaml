@@ -6,7 +6,7 @@ ui:
   replicaCount: 2
 
 appserver:
-  replicaCount: 2
+  replicaCount: 3
 
 db:
   persistence:

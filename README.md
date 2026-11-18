@@ -35,6 +35,7 @@ navigateur ──HTTPS──► Traefik (Ingress) ──► yelb-ui ──/api�
 14. [Idées d'exercices](#14-idées-dexercices)
 15. [TP 3 : packager l'appli avec Helm](#15-tp-3--packager-lappli-avec-helm)
 16. [Intégration continue : lint des manifestes](#16-intégration-continue--lint-des-manifestes)
+17. [TP 4 : livrer en GitOps](#17-tp-4--livrer-en-gitops)
 
 ---
 
@@ -51,6 +52,7 @@ navigateur ──HTTPS──► Traefik (Ingress) ──► yelb-ui ──/api�
 | `51-ingress-http-redirect.yaml` | Middleware Traefik et Ingress HTTP qui redirigent vers HTTPS |
 | `kustomization.yaml` | Liste des fichiers de l'appli, pour `kubectl apply -k .` |
 | `.github/workflows/k8s-lint.yml` | Lint des manifestes et du chart à chaque Pull Request (voir section 16) |
+| `gitops/` | TP 4 : Application Argo CD et SealedSecret, avec leur guide ([gitops/README.md](gitops/README.md)) |
 | `helm/` | TP 3 : chart Helm de l'appli et son guide ([helm/README.md](helm/README.md)) |
 | `cert-manager/cluster-issuers.yaml` | ClusterIssuers `letsencrypt-staging` et `letsencrypt-prod`. Hors kustomization, car ils concernent tout le cluster |
 
@@ -611,4 +613,18 @@ Pour suivre les runs :
 ```bash
 gh run list --workflow k8s-lint.yml
 gh run view --log-failed
+```
+
+---
+
+## 17. TP 4 : livrer en GitOps
+
+Le chart du TP 3 est déployé par **Argo CD** à partir du dépôt Git. Le mot de passe PostgreSQL y est rangé chiffré, sous forme de **SealedSecret**. Le guide complet se trouve dans [gitops/README.md](gitops/README.md) : Sealed Secrets et kubeseal, votre propre dépôt, Argo CD, changements par commit, selfHeal et retour arrière par `git revert`.
+
+```bash
+kubectl apply -f https://github.com/bitnami-labs/sealed-secrets/releases/download/v0.41.2/controller.yaml
+kubectl create secret generic yelb-db-credentials -n yelb-prod --from-literal=POSTGRES_PASSWORD=postgres_password \
+  --dry-run=client -o yaml | kubeseal --format yaml > gitops/secrets/yelb-prod/yelb-db-credentials.yaml
+git add gitops/ && git commit -m "feat: SealedSecret" && git push
+kubectl apply -f gitops/apps/yelb-prod.yaml
 ```

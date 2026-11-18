@@ -1,7 +1,7 @@
 # ---------------------------------------------------------------------------
 # Lint des manifestes Kubernetes à chaque Pull Request vers main.
 #
-# 1. Manifestes bruts (TP 1-2) : Azure/k8s-lint (kubeconform), puis une
+# 1. Manifestes bruts (TP 1-2, et Application Argo CD + SealedSecret du TP 4) : Azure/k8s-lint (kubeconform), puis une
 #    validation stricte qui connaît aussi les CRD (ClusterIssuer, Middleware).
 # 2. Chart Helm (TP 3) : helm lint, rendu des valeurs dev et prod avec
 #    helm template, puis les mêmes validations sur le YAML produit.
@@ -52,6 +52,8 @@ jobs:
             50-ingress.yaml
             51-ingress-http-redirect.yaml
             cert-manager/cluster-issuers.yaml
+            gitops/apps/yelb-prod.yaml
+            gitops/secrets/yelb-prod/yelb-db-credentials.yaml
 
       - name: Validation stricte, CRD comprises
         run: |
@@ -60,7 +62,9 @@ jobs:
             -schema-location default -schema-location "$CRD_SCHEMAS" \
             00-namespace.yaml 10-db.yaml 20-redis.yaml 30-appserver.yaml \
             40-ui.yaml 50-ingress.yaml 51-ingress-http-redirect.yaml \
-            cert-manager/cluster-issuers.yaml
+            cert-manager/cluster-issuers.yaml \
+            gitops/apps/yelb-prod.yaml \
+            gitops/secrets/yelb-prod/yelb-db-credentials.yaml
 
       - name: Kustomization assemblable
         run: kubectl kustomize . > /dev/null
@@ -80,6 +84,7 @@ jobs:
           helm lint ./helm/yelb -f helm/yelb/values-dev.yaml
           helm lint ./helm/yelb -f helm/yelb/values-prod.yaml
           helm lint ./helm/yelb --set ingress.tls.enabled=false
+          helm lint ./helm/yelb -f helm/yelb/values-prod.yaml --set db.existingSecret=yelb-db-credentials
 
       - name: Rendu du chart (dev et prod)
         run: |
@@ -87,6 +92,9 @@ jobs:
           helm template dev  ./helm/yelb -n yelb-dev  -f helm/yelb/values-dev.yaml  > rendered/dev.yaml
           helm template prod ./helm/yelb -n yelb-prod -f helm/yelb/values-prod.yaml > rendered/prod.yaml
           helm template http ./helm/yelb -n yelb-http --set ingress.tls.enabled=false > rendered/http.yaml
+          # Variante GitOps (TP 4) : mot de passe fourni par un SealedSecret
+          helm template prod ./helm/yelb -n yelb-prod -f helm/yelb/values-prod.yaml \
+            --set db.existingSecret=yelb-db-credentials > rendered/gitops.yaml
 
       - name: Lint avec Azure/k8s-lint
         uses: azure/k8s-lint@v4.1.0
@@ -97,6 +105,7 @@ jobs:
             rendered/dev.yaml
             rendered/prod.yaml
             rendered/http.yaml
+            rendered/gitops.yaml
 
       - name: Validation stricte, CRD comprises
         run: |
