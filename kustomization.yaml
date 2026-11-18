@@ -7,3 +7,4 @@ resources:
   - 20-redis.yaml
   - 30-appserver.yaml
   - 40-ui.yaml
+  - 50-ingress.yaml
