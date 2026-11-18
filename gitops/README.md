@@ -152,7 +152,7 @@ git remote -v
 ### 3.3 Personnaliser
 
 ```bash
-# 1. L'Application Argo CD doit lire VOTRE dépôt (2 occurrences)
+# 1. L'Application Argo CD doit lire VOTRE dépôt (3 occurrences depuis le TP 5)
 sed -i 's#https://github.com/Killian-Aidalinfo/tp-kubernetes-yelb.git#https://github.com/<votre-compte>/tp-kubernetes-yelb.git#' gitops/apps/yelb-prod.yaml
 grep -n repoURL gitops/apps/yelb-prod.yaml
 

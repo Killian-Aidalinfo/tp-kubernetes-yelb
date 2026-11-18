@@ -208,8 +208,10 @@ helm template dev ./helm/yelb -n yelb-dev -f helm/yelb/values-dev.yaml
 | `ui.replicaCount` | `2` | `1` | `2` | Replicas du front |
 | `appserver.image.repository` / `appserver.image.tag` | `mreferre/yelb-appserver` / `0.7` | | | Image de l'API |
 | `appserver.replicaCount` | `2` | `1` | `3` | Replicas de l'API |
-| `db.image.repository` / `db.image.tag` | `mreferre/yelb-db` / `0.6` | | | Image de la base |
+| `db.image.repository` / `db.image.tag` | `mreferre/yelb-db` / `0.6` | | `postgres` / `17.12-alpine` | Image de la base |
 | `db.password` | `postgres_password` | | | Mot de passe (imposé par l'API, ne pas changer) |
+| `podSecurity.restricted` | `false` | | `true` | Pods conformes au profil Pod Security « restricted » : non root, aucune capacité, seccomp. Le front passe sur le port 8080 (TP 5) |
+| `db.runAsUser` | `999` | | `70` | Utilisateur de PostgreSQL en mode restricted : 999 (yelb-db, postgres Debian), 70 (postgres alpine) |
 | `db.existingSecret` | `""` | | | Secret existant (clé `POSTGRES_PASSWORD`) à utiliser à la place de celui du chart. Utilisé par Argo CD au TP 4 |
 | `db.persistence.enabled` | `true` | `false` | `true` | PVC, ou `emptyDir` si `false` |
 | `db.persistence.size` | `1Gi` | | `2Gi` | Taille du volume |
@@ -338,9 +340,11 @@ Pour une modification durable, mieux vaut changer `values-prod.yaml` puis relanc
 
 Le front 0.9 n'est pas compatible avec ce chart : il ajoute lui-même `:4567` à l'adresse de l'API, et nginx refuse de démarrer.
 
+> Depuis le TP 5, `values-prod.yaml` active `podSecurity.restricted` : le front n'utilise plus le script de démarrage de l'image, et l'erreur n'apparaîtrait pas. D'où le `--set podSecurity.restricted=false` ci-dessous. Il est à faire sur un namespace qui n'est pas encore en Pod Security « restricted ».
+
 ```bash
 helm upgrade prod ./helm/yelb -n yelb-prod -f helm/yelb/values-prod.yaml \
-  --set ui.image.tag=0.9 --wait --timeout 2m
+  --set podSecurity.restricted=false --set ui.image.tag=0.9 --wait --timeout 2m
 # Error: UPGRADE FAILED: … prod-yelb-ui not ready
 
 kubectl -n yelb-prod get pods -l app.kubernetes.io/component=ui

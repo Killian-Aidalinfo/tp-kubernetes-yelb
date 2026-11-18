@@ -1,0 +1,11 @@
+# ---------------------------------------------------------------------------
+# Vulnérabilités acceptées, avec leur justification et une date de revue.
+# Une ligne = un identifiant CVE. Trivy les ignore (option --ignorefile).
+# ---------------------------------------------------------------------------
+
+# CVE-2025-68121 : bibliothèque standard Go de /usr/local/bin/gosu
+# (images postgres officielles). gosu ne sert qu'à quitter le compte root au
+# démarrage. Avec podSecurity.restricted, le conteneur démarre directement en
+# utilisateur postgres (uid 70) et gosu n'est jamais exécuté.
+# À revoir : 2027-02-01, ou dès qu'une image postgres corrige ce binaire.
+CVE-2025-68121
