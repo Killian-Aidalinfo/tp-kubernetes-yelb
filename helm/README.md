@@ -1,6 +1,6 @@
 # TP 3 : packager Yelb avec Helm
 
-Les manifestes des TP 1 et 2 (à la racine du dépôt) deviennent un chart Helm, `helm/yelb`. Le même chart sert à installer deux environnements, **dev** et **prod**, qui ne diffèrent que par leurs valeurs.
+Les manifestes des TP 1 et 2 (à la racine du dépôt) deviennent un chart Helm, `helm/yelb`. **Ce chart est déjà prêt** : pour l'installer, passez directement à la [section 5](#5-vérifier-le-chart-avant-dinstaller). Le même chart sert à installer deux environnements, **dev** et **prod**, qui ne diffèrent que par leurs valeurs.
 
 ## Sommaire
 
@@ -107,21 +107,56 @@ kubectl config view --minify          # serveur : https://127.0.0.1:6443
 
 ## 2. Créer le chart
 
-Le chart du dépôt a été créé ainsi, avant de remplacer les templates générés par les manifestes des TP 1 et 2 :
+> ⚠️ **Ne lancez jamais `helm create yelb` dans le dossier `helm/` du dépôt.** Le chart `helm/yelb` existe déjà, et `helm create` écrase sans demander `Chart.yaml`, `values.yaml`, `_helpers.tpl` et `ingress.yaml`, puis ajoute les templates nginx d'exemple. L'installation échoue ensuite avec des erreurs comme :
+>
+> ```
+> warning: destination for yelb.ingress.tls is a table. Ignoring non-table value ([])
+> Error: INSTALLATION FAILED: … no template "yelb.componentName" associated with template "gotpl"
+> ```
+>
+> Pour réparer, voir [Restaurer le chart](#restaurer-le-chart-après-un-helm-create-de-trop).
+
+### Comment le chart du dépôt a été créé
+
+Le point de départ a été généré avec `helm create yelb`, qui produit un chart d'exemple (nginx). On a ensuite :
+
+1. supprimé ses templates `deployment.yaml`, `service.yaml`, `ingress.yaml`, `hpa.yaml`, `httproute.yaml`, `serviceaccount.yaml` et `tests/test-connection.yaml` ;
+2. écrit un template par composant de Yelb à partir des manifestes des TP 1 et 2 ;
+3. adapté `_helpers.tpl`, `NOTES.txt`, `Chart.yaml` et `values.yaml`.
+
+### Refaire l'exercice soi-même
+
+On travaille dans un **autre dossier**, hors du dépôt, sous un autre nom :
 
 ```bash
-cd helm
-helm create yelb
+cd ~
+helm create mon-yelb
+rm mon-yelb/templates/*.yaml mon-yelb/templates/tests/*.yaml
+cp ~/tp-kubernetes-yelb/[1-5]*.yaml mon-yelb/templates/
+# puis paramétrer les templates avec {{ .Values.… }} et remplir mon-yelb/values.yaml
+helm lint mon-yelb
 ```
 
-`helm create` génère un chart d'exemple (nginx). On a supprimé ses templates `deployment.yaml`, `service.yaml`, `ingress.yaml`, `hpa.yaml`, `httproute.yaml`, `serviceaccount.yaml` et `tests/test-connection.yaml`, puis on a écrit un template par composant de Yelb. Seuls `_helpers.tpl`, `NOTES.txt` et `.helmignore` ont été gardés et adaptés.
+Le chart `helm/yelb` du dépôt sert alors de correction.
 
-Pour refaire l'exercice soi-même :
+### Restaurer le chart après un `helm create` de trop
+
+Git permet de revenir à la version du dépôt :
 
 ```bash
-helm create mon-yelb
-rm -r mon-yelb/templates/*.yaml mon-yelb/templates/tests/*
-# puis copier les manifestes de la racine dans mon-yelb/templates/ et les paramétrer
+cd ~/tp-kubernetes-yelb
+git status helm/                       # fichiers modifiés (M) et ajoutés (??) par helm create
+git restore helm/yelb                  # remet les fichiers modifiés
+git clean -fd helm/yelb                # supprime les fichiers ajoutés
+git status helm/                       # plus rien à signaler
+helm lint ./helm/yelb -f helm/yelb/values-prod.yaml
+```
+
+Si une installation a échoué entre-temps, on la supprime avant de recommencer :
+
+```bash
+helm list -A --all                     # une release en « failed » ?
+helm uninstall prod -n yelb-prod
 ```
 
 ---
@@ -393,6 +428,7 @@ kubectl -n yelb-dev logs dev-yelb-test
 |---|---|---|
 | `kubernetes cluster unreachable: Get "http://localhost:8080/version"` | `echo $KUBECONFIG` et `ls -l ~/.kube/config` | Helm ne trouve pas de kubeconfig (cas de k3s) : voir [Sur k3s : donner à Helm l'accès au cluster](#sur-k3s--donner-à-helm-laccès-au-cluster) |
 | `error loading config file … permission denied` | `ls -l ~/.kube/config /etc/rancher/k3s/k3s.yaml` | Le fichier appartient à root : refaire le `chown` |
+| `no template "yelb.componentName"`, `yelb.ingress.tls is a table`, `nil pointer evaluating … .image` | `git status helm/` | `helm create` relancé sur le chart du dépôt : voir [Restaurer le chart](#restaurer-le-chart-après-un-helm-create-de-trop) |
 | `INSTALLATION FAILED: cannot re-use a name that is still in use` | `helm list -A` | Release déjà installée : utiliser `helm upgrade --install` |
 | `UPGRADE FAILED: another operation is in progress` | `helm history <release> -n <ns>` | Opération précédente interrompue : `helm rollback` vers la dernière révision `deployed` |
 | `no matches for kind "Middleware"` | `kubectl get crd middlewares.traefik.io` | CRD Traefik absentes : `--set ingress.httpsRedirect=false` |
