@@ -37,6 +37,10 @@ spec:
         checksum/config: {{ $config | sha256sum }}
     spec:
       automountServiceAccountToken: false
+      {{- if .Values.podSecurity.restricted }}
+      securityContext:
+        {{- include "yelb.restrictedPodSecurityContext" (dict "uid" 1001) | nindent 8 }}
+      {{- end }}
       containers:
         - name: appserver
           image: {{ include "yelb.image" .Values.appserver.image }}
@@ -47,8 +51,16 @@ spec:
           envFrom:
             - configMapRef:
                 name: {{ $name }}
+          {{- if .Values.podSecurity.restricted }}
+          securityContext:
+            {{- include "yelb.restrictedContainerSecurityContext" (dict "readOnly" true) | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          {{- else }}
           securityContext:
             allowPrivilegeEscalation: false
+          {{- end }}
           resources:
             {{- toYaml .Values.appserver.resources | nindent 12 }}
           readinessProbe:
@@ -63,6 +75,11 @@ spec:
               port: http
             initialDelaySeconds: 15
             periodSeconds: 10
+      {{- if .Values.podSecurity.restricted }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      {{- end }}
 ---
 apiVersion: v1
 kind: Service

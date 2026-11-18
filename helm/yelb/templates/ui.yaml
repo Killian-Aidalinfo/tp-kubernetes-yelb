@@ -2,6 +2,8 @@
 {{- $ctx := dict "root" . "component" "ui" "version" .Values.ui.image.tag -}}
 {{- $name := include "yelb.componentName" $ctx -}}
 {{- $config := include "yelb.uiConfig" . -}}
+{{- $restricted := .Values.podSecurity.restricted -}}
+{{- $nginx := include "yelb.uiNginxConf" . -}}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -10,6 +12,20 @@ metadata:
     {{- include "yelb.labels" $ctx | nindent 4 }}
 data:
   {{- $config | nindent 2 }}
+{{- if $restricted }}
+---
+# Mode restricted : le script de démarrage de l'image (qui réécrit la conf
+# nginx en root) est remplacé par nginx lancé directement, avec cette conf.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}-nginx
+  labels:
+    {{- include "yelb.labels" $ctx | nindent 4 }}
+data:
+  nginx.conf: |
+    {{- $nginx | nindent 4 }}
+{{- end }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -33,13 +49,32 @@ spec:
       labels:
         {{- include "yelb.labels" $ctx | nindent 8 }}
       annotations:
-        checksum/config: {{ $config | sha256sum }}
+        checksum/config: {{ printf "%s%s" $config (ternary $nginx "" $restricted) | sha256sum }}
     spec:
       automountServiceAccountToken: false
+      {{- if $restricted }}
+      securityContext:
+        {{- include "yelb.restrictedPodSecurityContext" (dict "uid" 101) | nindent 8 }}
+      {{- end }}
       containers:
         - name: ui
           image: {{ include "yelb.image" .Values.ui.image }}
           imagePullPolicy: {{ .Values.imagePullPolicy }}
+          {{- if $restricted }}
+          # nginx en utilisateur nginx (uid 101) : port non privilégié 8080.
+          command: ["nginx", "-g", "daemon off;"]
+          ports:
+            - name: http
+              containerPort: 8080
+          securityContext:
+            {{- include "yelb.restrictedContainerSecurityContext" (dict "readOnly" true) | nindent 12 }}
+          volumeMounts:
+            - name: nginx-conf
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+            - name: tmp
+              mountPath: /tmp
+          {{- else }}
           ports:
             - name: http
               containerPort: 80
@@ -50,6 +85,7 @@ spec:
           # l'image réécrit la conf nginx et écoute sur le port 80.
           securityContext:
             allowPrivilegeEscalation: false
+          {{- end }}
           resources:
             {{- toYaml .Values.ui.resources | nindent 12 }}
           readinessProbe:
@@ -63,6 +99,14 @@ spec:
               port: http
             initialDelaySeconds: 10
             periodSeconds: 10
+      {{- if $restricted }}
+      volumes:
+        - name: nginx-conf
+          configMap:
+            name: {{ $name }}-nginx
+        - name: tmp
+          emptyDir: {}
+      {{- end }}
 ---
 apiVersion: v1
 kind: Service
@@ -81,4 +125,36 @@ spec:
 {{- define "yelb.uiConfig" -}}
 # nginx du front relaie /api vers ce Service.
 YELB_APPSERVER_ENDPOINT: http://{{ include "yelb.componentName" (dict "root" . "component" "appserver") }}:4567
+{{- end }}
+{{- define "yelb.uiNginxConf" -}}
+worker_processes 1;
+pid /tmp/nginx.pid;
+error_log /dev/stderr warn;
+events {
+  worker_connections 1024;
+}
+http {
+  include /etc/nginx/mime.types;
+  default_type application/octet-stream;
+  access_log /dev/stdout;
+  # Fichiers temporaires dans /tmp : le reste du disque est en lecture seule.
+  client_body_temp_path /tmp/client_temp;
+  proxy_temp_path /tmp/proxy_temp;
+  fastcgi_temp_path /tmp/fastcgi_temp;
+  uwsgi_temp_path /tmp/uwsgi_temp;
+  scgi_temp_path /tmp/scgi_temp;
+  sendfile on;
+  gzip on;
+  server {
+    listen 8080;
+    location / {
+      root /clarity-seed/prod/dist;
+      index index.html;
+    }
+    location /api {
+      proxy_pass http://{{ include "yelb.componentName" (dict "root" . "component" "appserver") }}:4567/api;
+      proxy_http_version 1.1;
+    }
+  }
+}
 {{- end }}

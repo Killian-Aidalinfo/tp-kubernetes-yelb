@@ -12,6 +12,13 @@ fullnameOverride: ""
 # Politique de téléchargement commune à toutes les images.
 imagePullPolicy: IfNotPresent
 
+# --- Sécurité des pods (TP 5) -----------------------------------------------
+podSecurity:
+  # true : tous les pods respectent le profil « restricted » des Pod Security
+  # Standards (utilisateur non root, aucune capacité, seccomp). Le front est
+  # alors servi par nginx sur le port 8080, avec la conf fournie par le chart.
+  restricted: false
+
 # --- Interface web (Angular + nginx) ----------------------------------------
 ui:
   image:

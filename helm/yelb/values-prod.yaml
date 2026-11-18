@@ -2,6 +2,9 @@
 # Environnement PROD : plusieurs replicas, données persistées, vrai certificat.
 #   helm install prod ./helm/yelb -n yelb-prod --create-namespace -f helm/yelb/values-prod.yaml
 # ---------------------------------------------------------------------------
+podSecurity:
+  restricted: true        # TP 5 : namespace en Pod Security « restricted »
+
 ui:
   replicaCount: 2
 

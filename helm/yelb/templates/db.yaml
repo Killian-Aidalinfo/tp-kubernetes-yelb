@@ -63,6 +63,12 @@ spec:
         {{- end }}
     spec:
       automountServiceAccountToken: false
+      {{- if .Values.podSecurity.restricted }}
+      # Utilisateur postgres de l'image (uid 999) ; fsGroup rend le volume
+      # accessible en écriture à ce groupe.
+      securityContext:
+        {{- include "yelb.restrictedPodSecurityContext" (dict "uid" 999 "fsGroup" 999) | nindent 8 }}
+      {{- end }}
       containers:
         - name: postgres
           image: {{ include "yelb.image" .Values.db.image }}
@@ -79,6 +85,10 @@ spec:
             # Sous-dossier : la racine d'un volume ext4 contient lost+found.
             - name: PGDATA
               value: /var/lib/postgresql/data/pgdata
+          {{- if .Values.podSecurity.restricted }}
+          securityContext:
+            {{- include "yelb.restrictedContainerSecurityContext" (dict "readOnly" false) | nindent 12 }}
+          {{- end }}
           volumeMounts:
             - name: data
               mountPath: /var/lib/postgresql/data

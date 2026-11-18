@@ -70,3 +70,31 @@ Usage : include "yelb.image" .Values.ui.image
 {{- define "yelb.image" -}}
 {{- printf "%s:%s" .repository (toString .tag) }}
 {{- end }}
+
+{{/*
+Pod Security Standards « restricted » (TP 5), activé par podSecurity.restricted.
+securityContext du pod : utilisateur non root, profil seccomp par défaut.
+Usage : include "yelb.restrictedPodSecurityContext" (dict "uid" 101 "fsGroup" 0)
+*/}}
+{{- define "yelb.restrictedPodSecurityContext" -}}
+runAsNonRoot: true
+runAsUser: {{ .uid }}
+runAsGroup: {{ .uid }}
+{{- with .fsGroup }}
+fsGroup: {{ . }}
+{{- end }}
+seccompProfile:
+  type: RuntimeDefault
+{{- end }}
+
+{{/*
+securityContext d'un conteneur en mode restricted : aucune capacité, pas
+d'élévation de privilèges, système de fichiers en lecture seule si possible.
+Usage : include "yelb.restrictedContainerSecurityContext" (dict "readOnly" true)
+*/}}
+{{- define "yelb.restrictedContainerSecurityContext" -}}
+allowPrivilegeEscalation: false
+readOnlyRootFilesystem: {{ .readOnly }}
+capabilities:
+  drop: ["ALL"]
+{{- end }}
