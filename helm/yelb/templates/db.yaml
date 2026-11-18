@@ -1,6 +1,11 @@
 {{- /* Base PostgreSQL : Secret, PVC, Deployment et Service. */ -}}
 {{- $ctx := dict "root" . "component" "db" "version" .Values.db.image.tag -}}
 {{- $name := include "yelb.componentName" $ctx -}}
+{{- /* Secret du mot de passe : créé par le chart, sauf si db.existingSecret
+       désigne un Secret fourni d'ailleurs (ex. par Sealed Secrets, TP 4). */ -}}
+{{- $secretName := .Values.db.existingSecret | default $name -}}
+{{- if not .Values.db.existingSecret }}
+---
 apiVersion: v1
 kind: Secret
 metadata:
@@ -10,6 +15,7 @@ metadata:
 type: Opaque
 stringData:
   POSTGRES_PASSWORD: {{ .Values.db.password | quote }}
+{{- end }}
 {{- if .Values.db.persistence.enabled }}
 ---
 apiVersion: v1
@@ -51,8 +57,10 @@ spec:
       labels:
         {{- include "yelb.labels" $ctx | nindent 8 }}
       annotations:
+        {{- if not .Values.db.existingSecret }}
         # Le pod est recréé si le mot de passe change.
         checksum/secret: {{ .Values.db.password | sha256sum }}
+        {{- end }}
     spec:
       automountServiceAccountToken: false
       containers:
@@ -66,7 +74,7 @@ spec:
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ $name }}
+                  name: {{ $secretName }}
                   key: POSTGRES_PASSWORD
             # Sous-dossier : la racine d'un volume ext4 contient lost+found.
             - name: PGDATA
