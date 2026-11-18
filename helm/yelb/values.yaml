@@ -46,6 +46,10 @@ db:
   # ATTENTION : l'API a ce mot de passe écrit en dur dans son code. Le changer
   # ici casse la connexion entre l'API et la base.
   password: postgres_password
+  # Nom d'un Secret déjà présent dans le namespace, avec la clé
+  # POSTGRES_PASSWORD. S'il est renseigné, le chart ne crée pas de Secret et
+  # `password` est ignoré. Sert au TP 4 : le Secret vient d'un SealedSecret.
+  existingSecret: ""
   persistence:
     # false = emptyDir : les données sont perdues quand le pod est recréé.
     enabled: true

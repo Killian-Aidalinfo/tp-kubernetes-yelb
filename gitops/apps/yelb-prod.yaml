@@ -1,0 +1,55 @@
+# ---------------------------------------------------------------------------
+# Application Argo CD : déploie Yelb en prod à partir de ce dépôt Git.
+#
+# Argo CD surveille deux dossiers du dépôt et les applique dans yelb-prod :
+#   1. helm/yelb                   : le chart du TP 3, avec values-prod.yaml ;
+#   2. gitops/secrets/yelb-prod    : le SealedSecret du mot de passe,
+#      déchiffré dans le cluster par le contrôleur Sealed Secrets.
+#
+# À appliquer UNE fois, à la main :
+#   kubectl apply -f gitops/apps/yelb-prod.yaml
+# Ensuite, tout changement se fait par un commit poussé sur Git.
+#
+# Dans VOTRE dépôt : remplacer les deux repoURL par l'URL de votre dépôt.
+# ---------------------------------------------------------------------------
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: yelb-prod
+  namespace: argocd
+  # Supprimer l'Application supprime aussi ce qu'elle a déployé
+  # (suppression en cascade, au premier plan).
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io/foreground
+spec:
+  project: default
+
+  sources:
+    # 1. Le chart Helm
+    - repoURL: https://github.com/Killian-Aidalinfo/tp-kubernetes-yelb.git
+      targetRevision: main
+      path: helm/yelb
+      helm:
+        releaseName: prod
+        valueFiles:
+          - values-prod.yaml
+        # Le mot de passe ne vient plus du chart mais du SealedSecret.
+        valuesObject:
+          db:
+            existingSecret: yelb-db-credentials
+
+    # 2. Le SealedSecret (manifestes YAML bruts)
+    - repoURL: https://github.com/Killian-Aidalinfo/tp-kubernetes-yelb.git
+      targetRevision: main
+      path: gitops/secrets/yelb-prod
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: yelb-prod
+
+  syncPolicy:
+    automated:
+      prune: true      # une ressource retirée de Git est supprimée du cluster
+      selfHeal: true   # une modification faite à la main est annulée
+    syncOptions:
+      - CreateNamespace=true
