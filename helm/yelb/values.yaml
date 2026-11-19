@@ -12,6 +12,13 @@ fullnameOverride: ""
 # Politique de téléchargement commune à toutes les images.
 imagePullPolicy: IfNotPresent
 
+# --- Sécurité des pods (TP 5) -----------------------------------------------
+podSecurity:
+  # true : tous les pods respectent le profil « restricted » des Pod Security
+  # Standards (utilisateur non root, aucune capacité, seccomp). Le front est
+  # alors servi par nginx sur le port 8080, avec la conf fournie par le chart.
+  restricted: false
+
 # --- Interface web (Angular + nginx) ----------------------------------------
 ui:
   image:
@@ -46,6 +53,9 @@ db:
   # ATTENTION : l'API a ce mot de passe écrit en dur dans son code. Le changer
   # ici casse la connexion entre l'API et la base.
   password: postgres_password
+  # Utilisateur de PostgreSQL dans l'image, utilisé en mode restricted :
+  # 999 pour mreferre/yelb-db et postgres (Debian), 70 pour postgres:*-alpine.
+  runAsUser: 999
   # Nom d'un Secret déjà présent dans le namespace, avec la clé
   # POSTGRES_PASSWORD. S'il est renseigné, le chart ne crée pas de Secret et
   # `password` est ignoré. Sert au TP 4 : le Secret vient d'un SealedSecret.

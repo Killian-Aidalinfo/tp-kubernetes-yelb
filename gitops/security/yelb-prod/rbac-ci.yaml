@@ -1,0 +1,71 @@
+# ---------------------------------------------------------------------------
+# ServiceAccount « ci » en LECTURE SEULE sur le namespace yelb-prod.
+#
+# Un pipeline de CI peut ainsi consulter l'état du déploiement (pods, logs,
+# événements…) sans pouvoir rien modifier, et sans lire les Secrets.
+#
+# Vérifier :
+#   kubectl auth can-i list pods   -n yelb-prod --as=system:serviceaccount:yelb-prod:ci   # yes
+#   kubectl auth can-i delete pods -n yelb-prod --as=system:serviceaccount:yelb-prod:ci   # no
+#   kubectl auth can-i get secrets -n yelb-prod --as=system:serviceaccount:yelb-prod:ci   # no
+# ---------------------------------------------------------------------------
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ci
+  namespace: yelb-prod
+  labels:
+    app.kubernetes.io/part-of: yelb
+---
+# Role (et pas ClusterRole) : les droits ne valent que dans ce namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ci-readonly
+  namespace: yelb-prod
+  labels:
+    app.kubernetes.io/part-of: yelb
+rules:
+  # Ressources de base. Les Secrets sont volontairement absents.
+  - apiGroups: [""]
+    resources:
+      - pods
+      - pods/log
+      - services
+      - endpoints
+      - configmaps
+      - persistentvolumeclaims
+      - events
+      - serviceaccounts
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses", "networkpolicies"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["cert-manager.io"]
+    resources: ["certificates", "certificaterequests"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ci-readonly
+  namespace: yelb-prod
+  labels:
+    app.kubernetes.io/part-of: yelb
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ci-readonly
+subjects:
+  - kind: ServiceAccount
+    name: ci
+    namespace: yelb-prod

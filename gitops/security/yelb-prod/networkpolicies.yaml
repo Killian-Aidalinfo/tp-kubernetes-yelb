@@ -1,0 +1,241 @@
+# ---------------------------------------------------------------------------
+# NetworkPolicies du namespace yelb-prod.
+#
+# 1. deny-all : plus aucun trafic, ni entrant ni sortant, pour tous les pods.
+# 2. Puis on n'ouvre que le strict nécessaire :
+#
+#    Traefik ──► ui ──► appserver ──► db
+#                           └───────► redis
+#    + DNS pour tous   + défi Let's Encrypt (cert-manager)   + helm test
+#
+# Les pods sont désignés par le label app.kubernetes.io/component posé par
+# le chart (ui, appserver, db, redis, test). Les ports sont désignés par leur
+# nom (http, postgres, redis) : ils restent justes si le numéro change (le
+# front passe de 80 à 8080 en mode restricted).
+# ---------------------------------------------------------------------------
+
+# 1. Tout bloquer
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-all
+  namespace: yelb-prod
+spec:
+  podSelector: {}          # tous les pods du namespace
+  policyTypes:
+    - Ingress
+    - Egress
+---
+# 2. DNS : sans lui, les pods ne trouvent pas les Services par leur nom.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: yelb-prod
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+# 3. Traefik -> ui. Traefik est dans kube-system sur k3s, dans traefik s'il est
+#    installé par Helm : on l'accepte depuis n'importe quel namespace.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-traefik-to-ui
+  namespace: yelb-prod
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: ui
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik
+      ports:
+        - port: http
+---
+# 4. ui -> appserver (le nginx du front relaie /api)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ui-to-appserver
+  namespace: yelb-prod
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: ui
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: appserver
+      ports:
+        - port: 4567
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: appserver-ingress
+  namespace: yelb-prod
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: appserver
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: ui
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: test     # helm test
+      ports:
+        - port: http
+---
+# 5. appserver -> db et appserver -> redis
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-appserver-to-db-and-redis
+  namespace: yelb-prod
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: appserver
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: db
+      ports:
+        - port: 5432
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: redis
+      ports:
+        - port: 6379
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: db-ingress
+  namespace: yelb-prod
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: db
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: appserver
+      ports:
+        - port: postgres
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: redis-ingress
+  namespace: yelb-prod
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: redis
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: appserver
+      ports:
+        - port: redis
+---
+# 6. helm test : le pod de test appelle l'API et le front
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-test-egress
+  namespace: yelb-prod
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: test
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: appserver
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: ui
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ui-ingress-from-test
+  namespace: yelb-prod
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: ui
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: test
+      ports:
+        - port: http
+---
+# 7. Renouvellement du certificat : pendant le défi HTTP-01, cert-manager crée
+#    dans ce namespace un pod « solver » que Let's Encrypt joint via Traefik.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-traefik-to-acme-solver
+  namespace: yelb-prod
+spec:
+  podSelector:
+    matchLabels:
+      acme.cert-manager.io/http01-solver: "true"
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik
+      ports:
+        - port: 8089

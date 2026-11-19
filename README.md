@@ -36,6 +36,7 @@ navigateur ──HTTPS──► Traefik (Ingress) ──► yelb-ui ──/api�
 15. [TP 3 : packager l'appli avec Helm](#15-tp-3--packager-lappli-avec-helm)
 16. [Intégration continue : lint des manifestes](#16-intégration-continue--lint-des-manifestes)
 17. [TP 4 : livrer en GitOps](#17-tp-4--livrer-en-gitops)
+18. [TP 5 : verrouiller le namespace](#18-tp-5--verrouiller-le-namespace)
 
 ---
 
@@ -53,6 +54,8 @@ navigateur ──HTTPS──► Traefik (Ingress) ──► yelb-ui ──/api�
 | `kustomization.yaml` | Liste des fichiers de l'appli, pour `kubectl apply -k .` |
 | `.github/workflows/k8s-lint.yml` | Lint des manifestes et du chart à chaque Pull Request (voir section 16) |
 | `gitops/` | TP 4 : Application Argo CD et SealedSecret, avec leur guide ([gitops/README.md](gitops/README.md)) |
+| `gitops/security/` | TP 5 : RBAC, NetworkPolicies, Pod Security et Trivy, avec leur guide ([gitops/security/README.md](gitops/security/README.md)) |
+| `.trivyignore` | TP 5 : vulnérabilités acceptées par Trivy, avec leur justification |
 | `helm/` | TP 3 : chart Helm de l'appli et son guide ([helm/README.md](helm/README.md)) |
 | `cert-manager/cluster-issuers.yaml` | ClusterIssuers `letsencrypt-staging` et `letsencrypt-prod`. Hors kustomization, car ils concernent tout le cluster |
 
@@ -627,4 +630,24 @@ kubectl create secret generic yelb-db-credentials -n yelb-prod --from-literal=PO
   --dry-run=client -o yaml | kubeseal --format yaml > gitops/secrets/yelb-prod/yelb-db-credentials.yaml
 git add gitops/ && git commit -m "feat: SealedSecret" && git push
 kubectl apply -f gitops/apps/yelb-prod.yaml
+```
+
+---
+
+## 18. TP 5 : verrouiller le namespace
+
+Le namespace `yelb-prod` est durci, toujours par Git et Argo CD :
+
+- un ServiceAccount `ci` en lecture seule, vérifié avec `kubectl auth can-i` ;
+- un `deny-all`, puis seulement les flux Traefik → web → api → postgres (+ Redis, DNS, renouvellement du certificat) ;
+- le namespace en Pod Security `restricted`, avec des pods non root ;
+- en bonus, un scan Trivy et le remplacement de l'image de base (PostgreSQL 10 en fin de vie) par `postgres:17.12-alpine`.
+
+Le guide complet se trouve dans [gitops/security/README.md](gitops/security/README.md).
+
+```bash
+kubectl auth can-i delete pods -n yelb-prod --as=system:serviceaccount:yelb-prod:ci   # no
+kubectl -n yelb-prod get networkpolicy
+kubectl get ns yelb-prod --show-labels | tr ',' '\n' | grep pod-security
+trivy image --severity CRITICAL --ignore-unfixed --ignorefile .trivyignore postgres:17.12-alpine
 ```

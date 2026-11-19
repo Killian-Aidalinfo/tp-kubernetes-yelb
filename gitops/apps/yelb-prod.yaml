@@ -4,13 +4,15 @@
 # Argo CD surveille deux dossiers du dépôt et les applique dans yelb-prod :
 #   1. helm/yelb                   : le chart du TP 3, avec values-prod.yaml ;
 #   2. gitops/secrets/yelb-prod    : le SealedSecret du mot de passe,
-#      déchiffré dans le cluster par le contrôleur Sealed Secrets.
+#      déchiffré dans le cluster par le contrôleur Sealed Secrets ;
+#   3. gitops/security/yelb-prod   : RBAC et NetworkPolicies (TP 5).
+# Le namespace reçoit aussi les labels Pod Security « restricted » (TP 5).
 #
 # À appliquer UNE fois, à la main :
 #   kubectl apply -f gitops/apps/yelb-prod.yaml
 # Ensuite, tout changement se fait par un commit poussé sur Git.
 #
-# Dans VOTRE dépôt : remplacer les deux repoURL par l'URL de votre dépôt.
+# Dans VOTRE dépôt : remplacer les trois repoURL par l'URL de votre dépôt.
 # ---------------------------------------------------------------------------
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -43,6 +45,11 @@ spec:
       targetRevision: main
       path: gitops/secrets/yelb-prod
 
+    # 3. Sécurité du namespace : ServiceAccount ci et NetworkPolicies (TP 5)
+    - repoURL: https://github.com/Killian-Aidalinfo/tp-kubernetes-yelb.git
+      targetRevision: main
+      path: gitops/security/yelb-prod
+
   destination:
     server: https://kubernetes.default.svc
     namespace: yelb-prod
@@ -53,3 +60,11 @@ spec:
       selfHeal: true   # une modification faite à la main est annulée
     syncOptions:
       - CreateNamespace=true
+    # Labels posés sur le namespace créé par Argo CD (TP 5) : Pod Security
+    # Admission refuse tout pod qui ne respecte pas le profil « restricted ».
+    managedNamespaceMetadata:
+      labels:
+        pod-security.kubernetes.io/enforce: restricted
+        pod-security.kubernetes.io/enforce-version: latest
+        pod-security.kubernetes.io/warn: restricted
+        pod-security.kubernetes.io/audit: restricted

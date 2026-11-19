@@ -54,6 +54,8 @@ jobs:
             cert-manager/cluster-issuers.yaml
             gitops/apps/yelb-prod.yaml
             gitops/secrets/yelb-prod/yelb-db-credentials.yaml
+            gitops/security/yelb-prod/rbac-ci.yaml
+            gitops/security/yelb-prod/networkpolicies.yaml
 
       - name: Validation stricte, CRD comprises
         run: |
@@ -64,7 +66,9 @@ jobs:
             40-ui.yaml 50-ingress.yaml 51-ingress-http-redirect.yaml \
             cert-manager/cluster-issuers.yaml \
             gitops/apps/yelb-prod.yaml \
-            gitops/secrets/yelb-prod/yelb-db-credentials.yaml
+            gitops/secrets/yelb-prod/yelb-db-credentials.yaml \
+            gitops/security/yelb-prod/rbac-ci.yaml \
+            gitops/security/yelb-prod/networkpolicies.yaml
 
       - name: Kustomization assemblable
         run: kubectl kustomize . > /dev/null
@@ -85,6 +89,7 @@ jobs:
           helm lint ./helm/yelb -f helm/yelb/values-prod.yaml
           helm lint ./helm/yelb --set ingress.tls.enabled=false
           helm lint ./helm/yelb -f helm/yelb/values-prod.yaml --set db.existingSecret=yelb-db-credentials
+          helm lint ./helm/yelb -f helm/yelb/values-dev.yaml --set podSecurity.restricted=true
 
       - name: Rendu du chart (dev et prod)
         run: |
@@ -121,3 +126,49 @@ jobs:
           name: helm-rendered
           path: rendered/
           retention-days: 7
+
+  # -------------------------------------------------------------------------
+  # Scan des images avec Trivy (TP 5, bonus).
+  # - Images maintenues (postgres, redis, busybox) : BLOQUANT si une CVE
+  #   critique a un correctif disponible. Exceptions justifiées : .trivyignore.
+  # - Images Yelb (non maintenues depuis 2022) : rapport seul, non bloquant.
+  # Trivy est lancé depuis son image Docker, épinglée par version.
+  # -------------------------------------------------------------------------
+  trivy:
+    name: Scan Trivy des images
+    runs-on: ubuntu-latest
+    env:
+      TRIVY_IMAGE: aquasec/trivy:0.76.1
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: azure/setup-helm@v5.0.1
+        with:
+          version: v4.3.1
+
+      - name: Images utilisées en prod
+        run: |
+          helm template prod ./helm/yelb -n yelb-prod -f helm/yelb/values-prod.yaml \
+            | grep -E '^\s+image:' | awk '{print $2}' | tr -d '"' | sort -u > images.txt
+          cat images.txt
+
+      - name: Images maintenues, aucune CVE critique corrigeable (bloquant)
+        run: |
+          status=0
+          for img in $(grep -v '^mreferre/' images.txt); do
+            echo "::group::$img"
+            docker run --rm -v "$PWD/.trivyignore:/.trivyignore:ro" "$TRIVY_IMAGE" image \
+              --image-src remote --no-progress --severity CRITICAL --ignore-unfixed \
+              --ignorefile /.trivyignore --exit-code 1 "$img" || status=1
+            echo "::endgroup::"
+          done
+          exit $status
+
+      - name: Images Yelb non maintenues (rapport seul)
+        run: |
+          for img in $(grep '^mreferre/' images.txt); do
+            echo "::group::$img"
+            docker run --rm "$TRIVY_IMAGE" image --image-src remote --no-progress \
+              --severity CRITICAL --exit-code 0 "$img"
+            echo "::endgroup::"
+          done

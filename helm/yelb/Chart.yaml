@@ -7,7 +7,7 @@ description: >-
 type: application
 
 # Version du chart : à incrémenter à chaque modification des templates.
-version: 0.2.0
+version: 0.4.0
 
 # Version de l'appli livrée (celle du front). Les tags de chaque image sont
 # réglés séparément dans values.yaml.

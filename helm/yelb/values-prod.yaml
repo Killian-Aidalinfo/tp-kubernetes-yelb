@@ -2,6 +2,9 @@
 # Environnement PROD : plusieurs replicas, données persistées, vrai certificat.
 #   helm install prod ./helm/yelb -n yelb-prod --create-namespace -f helm/yelb/values-prod.yaml
 # ---------------------------------------------------------------------------
+podSecurity:
+  restricted: true        # TP 5 : namespace en Pod Security « restricted »
+
 ui:
   replicaCount: 2
 
@@ -9,6 +12,14 @@ appserver:
   replicaCount: 3
 
 db:
+  # TP 5, bonus Trivy : image officielle maintenue à la place de
+  # mreferre/yelb-db:0.6 (PostgreSQL 10, fin de vie, 8 CVE critiques).
+  # Changer de version majeure de PostgreSQL impose une base neuve :
+  # voir gitops/security/README.md, bonus Trivy.
+  image:
+    repository: postgres
+    tag: "17.12-alpine"
+  runAsUser: 70           # utilisateur postgres des images alpine
   persistence:
     enabled: true
     size: 2Gi
